@@ -2,11 +2,24 @@ import { useState, useEffect } from 'react'
 import mammoth from 'mammoth'
 import './App.css'
 
+type QuizMode = 'all' | 'partial' | null;
+
 interface QuizQuestion {
   question: string;
   variants: string[];
   correctAnswer: string;
 }
+
+// Add constants for quiz configuration
+const MINIMUM_QUESTIONS = 30;
+
+// Add available quiz files
+const AVAILABLE_QUIZZES = [
+  { id: 'culturology', name: 'Culturology', file: '/culturology.docx' }
+  // Add more quizzes here as needed
+  // { id: 'history', name: 'History', file: '/history.docx' },
+  // { id: 'philosophy', name: 'Philosophy', file: '/philosophy.docx' },
+]
 
 function App() {
   const [questions, setQuestions] = useState<QuizQuestion[]>([])
@@ -17,25 +30,43 @@ function App() {
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [showNextButton, setShowNextButton] = useState(false)
+  const [totalAnswered, setTotalAnswered] = useState(0)
+  const [canFinishEarly, setCanFinishEarly] = useState(false)
+  const [quizMode, setQuizMode] = useState<QuizMode>(null)
+  const [selectedQuizId, setSelectedQuizId] = useState<string>(AVAILABLE_QUIZZES[0].id)
 
   useEffect(() => {
-    loadQuestions()
-  }, [])
+    if (quizMode) {
+      loadQuestions()
+    }
+  }, [quizMode])
+
+  useEffect(() => {
+    if (totalAnswered >= MINIMUM_QUESTIONS) {
+      setCanFinishEarly(true)
+    }
+  }, [totalAnswered])
 
   const loadQuestions = async () => {
     try {
       setIsLoading(true)
       setError(null)
-      const response = await fetch('/culturology.docx')
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+
+      const selectedQuiz = AVAILABLE_QUIZZES.find(q => q.id === selectedQuizId)
+      if (!selectedQuiz) {
+        throw new Error('Selected quiz not found')
       }
-      
+
+      const response = await fetch(selectedQuiz.file)
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
       const blob = await response.blob()
       const result = await mammoth.extractRawText({ arrayBuffer: await blob.arrayBuffer() })
-      
+      let content = result.value
+
       // Clean up the content
-      let content = result.value || ''
       content = content
         .replace(/\n+/g, ' ') // Remove newlines
         .replace(/\s+/g, ' ') // Normalize spaces
@@ -89,8 +120,13 @@ function App() {
         throw new Error('No valid questions found in the document. Please check the document format.')
       }
 
-      console.log(`Successfully parsed ${questions.length} questions`)
-      setQuestions(questions)
+      // If partial mode, select 30 random questions, otherwise use all
+      const finalQuestions = quizMode === 'partial' 
+        ? shuffleArray(questions).slice(0, MINIMUM_QUESTIONS)
+        : shuffleArray(questions)
+
+      console.log(`Successfully parsed and selected ${finalQuestions.length} questions from ${questions.length} total`)
+      setQuestions(finalQuestions)
       setIsLoading(false)
     } catch (error) {
       console.error('Error loading questions:', error)
@@ -100,7 +136,7 @@ function App() {
     }
   }
 
-  // Utility function to shuffle array
+  // Enhanced shuffle function with Fisher-Yates algorithm
   const shuffleArray = <T,>(array: T[]): T[] => {
     const newArray = [...array]
     for (let i = newArray.length - 1; i > 0; i--) {
@@ -115,6 +151,7 @@ function App() {
     if (variant === questions[currentQuestion].correctAnswer) {
       setScore(score + 1)
     }
+    setTotalAnswered(prev => prev + 1)
     setShowNextButton(true)
   }
 
@@ -138,6 +175,74 @@ function App() {
 
   const handleEndQuiz = () => {
     setShowResult(true)
+  }
+
+  // Add function to restart quiz with new random questions
+  const restartWithNewQuestions = () => {
+    setIsLoading(true)
+    loadQuestions().then(() => {
+      setCurrentQuestion(0)
+      setSelectedAnswer(null)
+      setScore(0)
+      setShowResult(false)
+      setShowNextButton(false)
+      setIsLoading(false)
+    })
+  }
+
+  if (!quizMode) {
+    return (
+      <div className="min-h-screen bg-white py-6 flex flex-col justify-center items-center">
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-bold text-gray-800 mb-4">Quiz</h1>
+          <p className="text-gray-600">Выбери режим</p>
+        </div>
+
+        <div className="w-full max-w-md px-4 mb-8">
+          <div className="bg-white rounded-lg border border-gray-200 p-6">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Select Quiz
+            </label>
+            <select
+              value={selectedQuizId}
+              onChange={(e) => setSelectedQuizId(e.target.value)}
+              className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 
+                focus:ring-blue-500 focus:border-blue-500"
+            >
+              {AVAILABLE_QUIZZES.map(quiz => (
+                <option key={quiz.id} value={quiz.id}>
+                  {quiz.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="space-y-4 w-full max-w-md px-4">
+          <button
+            onClick={() => setQuizMode('partial')}
+            className="w-full bg-blue-500 text-white p-6 rounded-xl hover:bg-blue-600 
+              transition-colors duration-300 flex flex-col items-center gap-2"
+          >
+            <span className="text-2xl font-bold">Jai mode</span>
+            <span className="text-sm opacity-90">
+              {MINIMUM_QUESTIONS} рандомных
+            </span>
+          </button>
+          
+          <button
+            onClick={() => setQuizMode('all')}
+            className="w-full bg-green-500 text-white p-6 rounded-xl hover:bg-green-600 
+              transition-colors duration-300 flex flex-col items-center gap-2"
+          >
+            <span className="text-2xl font-bold">Жоский mode</span>
+            <span className="text-sm opacity-90">
+              Все вопросы
+            </span>
+          </button>
+        </div>
+      </div>
+    )
   }
 
   if (isLoading) {
@@ -176,16 +281,40 @@ function App() {
           <div className="w-full mx-auto">
             <div className="space-y-4 sm:space-y-6">
               <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-4 sm:mb-8">
-                <h2 className="text-2xl sm:text-4xl font-bold text-gray-800 text-center sm:text-left">
-                  Question {currentQuestion + 1} of {questions.length}
-                </h2>
-                <button
-                  onClick={handleEndQuiz}
-                  className="px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700 border border-red-300 
-                    hover:border-red-400 rounded-lg transition-colors duration-300 w-full sm:w-auto"
-                >
-                  End Quiz
-                </button>
+                <div>
+                  <h2 className="text-2xl sm:text-4xl font-bold text-gray-800 text-center sm:text-left">
+                    Question {currentQuestion + 1} of {questions.length}
+                  </h2>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Questions answered: {totalAnswered}
+                    {quizMode === 'partial' && totalAnswered >= MINIMUM_QUESTIONS && 
+                      ` (You can finish now or continue for a better score)`
+                    }
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    Mode: {quizMode === 'partial' ? 'Jai mode' : 'Жоский mode'}
+                  </p>
+                </div>
+                <div className="flex gap-2 sm:gap-4">
+                  {quizMode === 'partial' && canFinishEarly && (
+                    <button
+                      onClick={handleEndQuiz}
+                      className="px-4 py-2 text-sm font-medium text-green-600 hover:text-green-700 
+                        border border-green-300 hover:border-green-400 rounded-lg 
+                        transition-colors duration-300 w-full sm:w-auto"
+                    >
+                      Finish ({MINIMUM_QUESTIONS} answered)
+                    </button>
+                  )}
+                  <button
+                    onClick={handleEndQuiz}
+                    className="px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700 
+                      border border-red-300 hover:border-red-400 rounded-lg 
+                      transition-colors duration-300 w-full sm:w-auto"
+                  >
+                    Give Up
+                  </button>
+                </div>
               </div>
               
               <p className="text-xl sm:text-2xl text-gray-700 font-medium mb-4 sm:mb-8 text-left">
@@ -294,19 +423,29 @@ function App() {
             <h2 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-4 sm:mb-6">Quiz Complete!</h2>
             <div className="mb-6 sm:mb-8">
               <div className="text-5xl sm:text-6xl font-bold text-blue-500 mb-2">
-                {Math.round((score / questions.length) * 100)}%
+                {Math.round((score / totalAnswered) * 100)}%
               </div>
               <p className="text-lg sm:text-xl text-gray-600">
-                You got {score} out of {questions.length} questions right
+                You got {score} out of {totalAnswered} questions right
               </p>
+              {quizMode === 'partial' && totalAnswered > MINIMUM_QUESTIONS && (
+                <p className="text-sm text-gray-500 mt-2">
+                  You answered {totalAnswered - MINIMUM_QUESTIONS} extra questions!
+                </p>
+              )}
             </div>
-            <button
-              onClick={resetQuiz}
-              className="bg-blue-500 text-white py-2.5 sm:py-3 px-6 sm:px-8 rounded-lg text-base sm:text-lg 
-                font-semibold hover:bg-blue-600 transition-colors duration-300"
-            >
-              Try Again
-            </button>
+            <div className="space-y-4">
+              <button
+                onClick={() => {
+                  setQuizMode(null)
+                  resetQuiz()
+                }}
+                className="w-full sm:w-auto bg-blue-500 text-white py-2.5 sm:py-3 px-6 sm:px-8 rounded-lg 
+                  text-base sm:text-lg font-semibold hover:bg-blue-600 transition-colors duration-300"
+              >
+                Choose New Mode
+              </button>
+            </div>
           </div>
         )}
       </div>
