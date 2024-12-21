@@ -178,17 +178,17 @@ function App() {
   }
 
   // Add function to restart quiz with new random questions
-  const restartWithNewQuestions = () => {
-    setIsLoading(true)
-    loadQuestions().then(() => {
-      setCurrentQuestion(0)
-      setSelectedAnswer(null)
-      setScore(0)
-      setShowResult(false)
-      setShowNextButton(false)
-      setIsLoading(false)
-    })
-  }
+  // const restartWithNewQuestions = () => {
+  //   setIsLoading(true)
+  //   loadQuestions().then(() => {
+  //     setCurrentQuestion(0)
+  //     setSelectedAnswer(null)
+  //     setScore(0)
+  //     setShowResult(false)
+  //     setShowNextButton(false)
+  //     setIsLoading(false)
+  //   })
+  // }
 
   if (!quizMode) {
     return (
