@@ -7,7 +7,8 @@ type QuizMode = 'all' | 'partial' | null;
 interface QuizQuestion {
   question: string;
   variants: string[];
-  correctAnswer: string;
+  correctAnswers: string[];
+  isMultiSelect: boolean;
 }
 
 // Add constants for quiz configuration
@@ -26,7 +27,7 @@ const AVAILABLE_QUIZZES = [
 function App() {
   const [questions, setQuestions] = useState<QuizQuestion[]>([])
   const [currentQuestion, setCurrentQuestion] = useState(0)
-  const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null)
+  const [selectedAnswers, setSelectedAnswers] = useState<string[]>([])
   const [score, setScore] = useState(0)
   const [showResult, setShowResult] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -91,29 +92,38 @@ function App() {
 
           const question = questionMatch[1].trim()
           
-          // Extract variants
-          const variants: string[] = []
-          const variantMatches = q.match(/<variant>(.*?)(?=<variant|<variantright|$)/g) || []
+          // Extract variants and right answers
+          const variants: string[] = [];
+          const rightAnswers: string[] = [];
+          
+          // Extract all variants first
+          const variantMatches = q.match(/<variant>(.*?)(?=<variant|<variantright|$)/g) || [];
           variantMatches.forEach(v => {
-            const variant = v.replace(/<variant>/, '').trim()
-            if (variant) variants.push(variant)
-          })
+            const variant = v.replace(/<variant>/, '').trim();
+            if (variant) variants.push(variant);
+          });
 
-          // Extract right answer
-          const rightMatch = q.match(/<variantright>(.*?)(?=<variant|$)/)
-          if (!rightMatch) return null
+          // Extract right answers
+          const rightMatches = q.match(/<variantright>(.*?)(?=<variant|<variantright|$)/g) || [];
+          rightMatches.forEach(r => {
+            const rightAnswer = r.replace(/<variantright>/, '').trim();
+            if (rightAnswer) {
+              rightAnswers.push(rightAnswer);
+              if (!variants.includes(rightAnswer)) {
+                variants.push(rightAnswer);
+              }
+            }
+          });
 
-          const rightAnswer = rightMatch[1].trim()
-          if (rightAnswer && !variants.includes(rightAnswer)) {
-            variants.push(rightAnswer)
-          }
+          if (!question || rightAnswers.length === 0 || variants.length === 0) return null;
 
-          if (!question || !rightAnswer || variants.length === 0) return null
+          const isMultiSelect = rightAnswers.length > 1;
 
           return {
             question,
             variants: shuffleArray(variants),
-            correctAnswer: rightAnswer
+            correctAnswers: rightAnswers,
+            isMultiSelect
           }
         })
         .filter((q): q is QuizQuestion => q !== null)
@@ -149,18 +159,33 @@ function App() {
   }
 
   const handleAnswerClick = (variant: string) => {
-    setSelectedAnswer(variant)
-    if (variant === questions[currentQuestion].correctAnswer) {
-      setScore(score + 1)
+    const currentQ = questions[currentQuestion];
+    
+    if (currentQ.isMultiSelect) {
+      // Handle multi-select
+      const newAnswers = [...selectedAnswers];
+      if (newAnswers.includes(variant)) {
+        newAnswers.splice(newAnswers.indexOf(variant), 1);
+      } else {
+        newAnswers.push(variant);
+      }
+      setSelectedAnswers(newAnswers);
+    } else {
+      // Handle single-select
+      setSelectedAnswers([variant]);
+      const isCorrect = currentQ.correctAnswers ? currentQ.correctAnswers[0] === variant : currentQ.correctAnswers[0] === variant;
+      if (isCorrect) {
+        setScore(score + 1);
+      }
+      setTotalAnswered(prev => prev + 1);
+      setShowNextButton(true);
     }
-    setTotalAnswered(prev => prev + 1)
-    setShowNextButton(true)
   }
 
   const handleNextQuestion = () => {
     if (currentQuestion + 1 < questions.length) {
       setCurrentQuestion(currentQuestion + 1)
-      setSelectedAnswer(null)
+      setSelectedAnswers([])
       setShowNextButton(false)
     } else {
       setShowResult(true)
@@ -169,7 +194,7 @@ function App() {
 
   const resetQuiz = () => {
     setCurrentQuestion(0)
-    setSelectedAnswer(null)
+    setSelectedAnswers([])
     setScore(0)
     setShowResult(false)
     setShowNextButton(false)
@@ -178,19 +203,6 @@ function App() {
   const handleEndQuiz = () => {
     setShowResult(true)
   }
-
-  // Add function to restart quiz with new random questions
-  // const restartWithNewQuestions = () => {
-  //   setIsLoading(true)
-  //   loadQuestions().then(() => {
-  //     setCurrentQuestion(0)
-  //     setSelectedAnswer(null)
-  //     setScore(0)
-  //     setShowResult(false)
-  //     setShowNextButton(false)
-  //     setIsLoading(false)
-  //   })
-  // }
 
   if (!quizMode) {
     return (
@@ -321,19 +333,24 @@ function App() {
               
               <p className="text-xl sm:text-2xl text-gray-700 font-medium mb-4 sm:mb-8 text-left">
                 {questions[currentQuestion].question}
+                {questions[currentQuestion].isMultiSelect && (
+                  <span className="block text-sm text-blue-600 mt-2">
+                    (Multiple answers required)
+                  </span>
+                )}
               </p>
 
               <div className="space-y-3 sm:space-y-4 flex flex-col">
                 {questions[currentQuestion].variants.map((variant, index) => {
-                  const isSelected = selectedAnswer === variant
-                  const isCorrect = variant === questions[currentQuestion].correctAnswer
-                  const showCorrectness = selectedAnswer !== null
+                  const isSelected = selectedAnswers.includes(variant)
+                  const isCorrect = questions[currentQuestion].correctAnswers?.includes(variant)
+                  const showCorrectness = selectedAnswers.length > 0 && showNextButton
 
                   return (
                     <button
                       key={index}
-                      onClick={() => !selectedAnswer && handleAnswerClick(variant)}
-                      disabled={selectedAnswer !== null}
+                      onClick={() => !showNextButton && handleAnswerClick(variant)}
+                      disabled={showNextButton}
                       className={`w-full p-3 sm:p-4 text-left transition-all duration-300 flex items-center
                         ${!showCorrectness 
                           ? 'hover:bg-gray-50 active:bg-gray-100 rounded-lg border border-gray-200' 
@@ -346,7 +363,7 @@ function App() {
                       `}
                     >
                       <div className="flex items-center w-full">
-                        <div className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full border-2 flex-shrink-0 mr-3 sm:mr-4
+                        <div className={`w-5 h-5 sm:w-6 sm:h-6 ${questions[currentQuestion].isMultiSelect ? 'rounded-md' : 'rounded-full'} border-2 flex-shrink-0 mr-3 sm:mr-4
                           ${!showCorrectness 
                             ? isSelected ? 'border-blue-500' : 'border-gray-300'
                             : isCorrect
@@ -357,14 +374,30 @@ function App() {
                           }
                         `}>
                           {(isSelected || (showCorrectness && isCorrect)) && (
-                            <div className={`w-2.5 h-2.5 sm:w-3 sm:h-3 m-auto rounded-full
-                              ${!showCorrectness 
-                                ? 'bg-blue-500'
-                                : isCorrect
-                                  ? 'bg-green-500'
-                                  : 'bg-red-500'
-                              }
-                            `} />
+                            questions[currentQuestion].isMultiSelect ? (
+                              <svg className={`w-3 h-3 sm:w-4 sm:h-4 m-auto
+                                ${!showCorrectness 
+                                  ? 'text-blue-500'
+                                  : isCorrect
+                                    ? 'text-green-500'
+                                    : 'text-red-500'
+                                }
+                              `} 
+                              fill="currentColor" 
+                              viewBox="0 0 20 20"
+                            >
+                              <path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/>
+                            </svg>
+                            ) : (
+                              <div className={`w-2.5 h-2.5 sm:w-3 sm:h-3 m-auto rounded-full
+                                ${!showCorrectness 
+                                  ? 'bg-blue-500'
+                                  : isCorrect
+                                    ? 'bg-green-500'
+                                    : 'bg-red-500'
+                                }
+                              `} />
+                            )
                           )}
                         </div>
                         <span className={`text-base sm:text-lg flex-grow
@@ -373,41 +406,63 @@ function App() {
                         `}>
                           {variant}
                         </span>
-                        {showCorrectness && isCorrect && (
-                          <svg 
-                            className="w-5 h-5 sm:w-6 sm:h-6 text-green-500 flex-shrink-0" 
-                            fill="none" 
-                            stroke="currentColor" 
-                            viewBox="0 0 24 24"
-                          >
-                            <path 
-                              strokeLinecap="round" 
-                              strokeLinejoin="round" 
-                              strokeWidth={2} 
-                              d="M5 13l4 4L19 7" 
-                            />
-                          </svg>
-                        )}
-                        {showCorrectness && isSelected && !isCorrect && (
-                          <svg 
-                            className="w-5 h-5 sm:w-6 sm:h-6 text-red-500 flex-shrink-0" 
-                            fill="none" 
-                            stroke="currentColor" 
-                            viewBox="0 0 24 24"
-                          >
-                            <path 
-                              strokeLinecap="round" 
-                              strokeLinejoin="round" 
-                              strokeWidth={2} 
-                              d="M6 18L18 6M6 6l12 12" 
-                            />
-                          </svg>
+                        {showCorrectness && (
+                          isCorrect ? (
+                            <svg 
+                              className="w-5 h-5 sm:w-6 sm:h-6 text-green-500 flex-shrink-0" 
+                              fill="none" 
+                              stroke="currentColor" 
+                              viewBox="0 0 24 24"
+                            >
+                              <path 
+                                strokeLinecap="round" 
+                                strokeLinejoin="round" 
+                                strokeWidth={2} 
+                                d="M5 13l4 4L19 7" 
+                              />
+                            </svg>
+                          ) : isSelected && (
+                            <svg 
+                              className="w-5 h-5 sm:w-6 sm:h-6 text-red-500 flex-shrink-0" 
+                              fill="none" 
+                              stroke="currentColor" 
+                              viewBox="0 0 24 24"
+                            >
+                              <path 
+                                strokeLinecap="round" 
+                                strokeLinejoin="round" 
+                                strokeWidth={2} 
+                                d="M6 18L18 6M6 6l12 12" 
+                              />
+                            </svg>
+                          )
                         )}
                       </div>
                     </button>
                   )
                 })}
               </div>
+
+              {(selectedAnswers.length > 0 && !showNextButton && questions[currentQuestion].isMultiSelect) && (
+                <button
+                  onClick={() => {
+                    const currentQ = questions[currentQuestion];
+                    const isCorrect = 
+                      currentQ.correctAnswers?.length === selectedAnswers.length &&
+                      currentQ.correctAnswers?.every(answer => selectedAnswers.includes(answer)) || false;
+                    
+                    if (isCorrect) {
+                      setScore(score + 1);
+                    }
+                    setShowNextButton(true);
+                    setTotalAnswered(prev => prev + 1);
+                  }}
+                  className="mt-6 sm:mt-8 w-full bg-blue-500 text-white py-2.5 sm:py-3 px-4 sm:px-6 rounded-lg 
+                    text-base sm:text-lg font-semibold hover:bg-blue-600 transition-colors duration-300"
+                >
+                  Check Answers
+                </button>
+              )}
 
               {showNextButton && (
                 <button
