@@ -15,6 +15,8 @@ const MINIMUM_QUESTIONS = 30;
 
 // Add available quiz files
 const AVAILABLE_QUIZZES = [
+  { id: 'Webka', name: 'Webka', file: '/webka.docx' },
+  { id: 'ix', name: 'uiux', file: '/ix.docx' },
   { id: 'culturology', name: 'Culturology', file: '/culturology.docx' }
   // Add more quizzes here as needed
   // { id: 'history', name: 'History', file: '/history.docx' },
