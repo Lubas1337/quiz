@@ -16,6 +16,7 @@ const MINIMUM_QUESTIONS = 30;
 
 // Add available quiz files
 const AVAILABLE_QUIZZES = [
+    {id: 'os rk1', name: 'os rk1', file: '/os_rk1.docx'},
     {id: 'philosophy', name: 'Philosophy', file: '/pshyc.docx'},
     {id: 'Webka', name: 'Webka', file: '/webka2.docx'},
     {id: 'ix', name: 'uiux', file: '/ix.docx'},
