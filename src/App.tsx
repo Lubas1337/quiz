@@ -3,6 +3,7 @@ import mammoth from 'mammoth'
 import './App.css'
 
 type QuizMode = 'all' | 'partial' | null;
+type Theme = 'light' | 'dark';
 
 interface QuizQuestion {
     question: string;
@@ -11,19 +12,63 @@ interface QuizQuestion {
     isMultiSelect: boolean;
 }
 
-// Add constants for quiz configuration
 const MINIMUM_QUESTIONS = 30;
 
-// Add available quiz files
 const AVAILABLE_QUIZZES = [
     {id: 'fullstack', name: 'Fullstack', file: '/fullstack.docx'},
-    {id: 'os rk2', name: 'os rk2', file: '/osrk2.docx'},
-    {id: 'os rk1', name: 'os rk1', file: '/os_rk1.docx'},
+    {id: 'os rk2', name: 'OS RK2', file: '/osrk2.docx'},
+    {id: 'os rk1', name: 'OS RK1', file: '/os_rk1.docx'},
     {id: 'philosophy', name: 'Philosophy', file: '/pshyc.docx'},
-    {id: 'Webka', name: 'Webka', file: '/webka2.docx'},
-    {id: 'ix', name: 'uiux', file: '/ix.docx'},
+    {id: 'Webka', name: 'Web Dev', file: '/webka2.docx'},
+    {id: 'ix', name: 'UI/UX', file: '/ix.docx'},
     {id: 'culturology', name: 'Culturology', file: '/culturology.docx'},
 ]
+
+// Icons
+const SunIcon = () => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <circle cx="12" cy="12" r="5"/>
+        <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+    </svg>
+)
+
+const MoonIcon = () => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+    </svg>
+)
+
+// Confetti
+const Confetti = () => {
+    const colors = ['#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899']
+    const pieces = Array.from({length: 40}, (_, i) => ({
+        id: i,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        left: `${Math.random() * 100}%`,
+        delay: `${Math.random() * 0.3}s`,
+        duration: `${2 + Math.random() * 1}s`,
+        size: `${6 + Math.random() * 6}px`,
+    }))
+
+    return (
+        <div className="confetti-container">
+            {pieces.map((p) => (
+                <div
+                    key={p.id}
+                    className="confetti"
+                    style={{
+                        left: p.left,
+                        width: p.size,
+                        height: p.size,
+                        backgroundColor: p.color,
+                        borderRadius: Math.random() > 0.5 ? '50%' : '2px',
+                        animation: `confetti-fall ${p.duration} ease-out ${p.delay} forwards`,
+                    }}
+                />
+            ))}
+        </div>
+    )
+}
 
 function App() {
     const [questions, setQuestions] = useState<QuizQuestion[]>([])
@@ -38,6 +83,16 @@ function App() {
     const [canFinishEarly, setCanFinishEarly] = useState(false)
     const [quizMode, setQuizMode] = useState<QuizMode>(null)
     const [selectedQuizId, setSelectedQuizId] = useState<string>(AVAILABLE_QUIZZES[0].id)
+    const [showConfetti, setShowConfetti] = useState(false)
+    const [theme, setTheme] = useState<Theme>(() => {
+        const saved = localStorage.getItem('quiz-theme')
+        return (saved as Theme) || 'light'
+    })
+
+    useEffect(() => {
+        document.documentElement.classList.toggle('dark', theme === 'dark')
+        localStorage.setItem('quiz-theme', theme)
+    }, [theme])
 
     useEffect(() => {
         if (quizMode) {
@@ -51,141 +106,133 @@ function App() {
         }
     }, [totalAnswered])
 
+    const toggleTheme = () => setTheme(t => t === 'light' ? 'dark' : 'light')
+
     const loadQuestions = async () => {
         try {
             setIsLoading(true)
             setError(null)
 
             const selectedQuiz = AVAILABLE_QUIZZES.find(q => q.id === selectedQuizId)
-            if (!selectedQuiz) {
-                throw new Error('Selected quiz not found')
-            }
+            if (!selectedQuiz) throw new Error('Quiz not found')
 
             const response = await fetch(selectedQuiz.file)
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`)
-            }
+            if (!response.ok) throw new Error(`HTTP error: ${response.status}`)
 
             const blob = await response.blob()
             const result = await mammoth.extractRawText({arrayBuffer: await blob.arrayBuffer()})
             let content = result.value
-
-            // Clean up the content
-            content = content
-                .replace(/\n+/g, ' ') // Remove newlines
-                .replace(/\s+/g, ' ') // Normalize spaces
-                .replace(/<\/variant>/g, '') // Remove closing variant tags
-                .replace(/<\/variantright>/g, '') // Remove closing variantright tags
-                .replace(/<\/question>/g, '') // Remove closing question tags
+                .replace(/\n+/g, ' ')
+                .replace(/\s+/g, ' ')
+                .replace(/<\/variant>/g, '')
+                .replace(/<\/variantright>/g, '')
+                .replace(/<\/question>/g, '')
                 .trim()
 
-            if (!content) {
-                throw new Error('No content found in document')
-            }
+            if (!content) throw new Error('No content found')
 
-            // Split content by questions
-            const questions = content.split('<question>')
-                .filter(Boolean) // Remove empty strings
+            const parsed = content.split('<question>')
+                .filter(Boolean)
                 .map(q => {
-                    // Extract question text
                     const questionMatch = q.match(/(.*?)(?=<variant|<variantright)/)
                     if (!questionMatch) return null
 
                     const question = questionMatch[1].trim()
+                    const variants: string[] = []
+                    const rightAnswers: string[] = []
 
-                    // Extract variants and right answers
-                    const variants: string[] = [];
-                    const rightAnswers: string[] = [];
-
-                    // Extract all variants first
-                    const variantMatches = q.match(/<variant>(.*?)(?=<variant|<variantright|$)/g) || [];
+                    const variantMatches = q.match(/<variant>(.*?)(?=<variant|<variantright|$)/g) || []
                     variantMatches.forEach(v => {
-                        const variant = v.replace(/<variant>/, '').trim();
-                        if (variant) variants.push(variant);
-                    });
+                        const variant = v.replace(/<variant>/, '').trim()
+                        if (variant) variants.push(variant)
+                    })
 
-                    // Extract right answers
-                    const rightMatches = q.match(/<variantright>(.*?)(?=<variant|<variantright|$)/g) || [];
+                    const rightMatches = q.match(/<variantright>(.*?)(?=<variant|<variantright|$)/g) || []
                     rightMatches.forEach(r => {
-                        const rightAnswer = r.replace(/<variantright>/, '').trim();
+                        const rightAnswer = r.replace(/<variantright>/, '').trim()
                         if (rightAnswer) {
-                            rightAnswers.push(rightAnswer);
-                            if (!variants.includes(rightAnswer)) {
-                                variants.push(rightAnswer);
-                            }
+                            rightAnswers.push(rightAnswer)
+                            if (!variants.includes(rightAnswer)) variants.push(rightAnswer)
                         }
-                    });
+                    })
 
-                    if (!question || rightAnswers.length === 0 || variants.length === 0) return null;
-
-                    const isMultiSelect = rightAnswers.length > 1;
+                    if (!question || rightAnswers.length === 0 || variants.length === 0) return null
 
                     return {
                         question,
                         variants: shuffleArray(variants),
                         correctAnswers: rightAnswers,
-                        isMultiSelect
+                        isMultiSelect: rightAnswers.length > 1
                     }
                 })
                 .filter((q): q is QuizQuestion => q !== null)
 
-            if (questions.length === 0) {
-                throw new Error('No valid questions found in the document. Please check the document format.')
-            }
+            if (parsed.length === 0) throw new Error('No valid questions found')
 
-            // If partial mode, select 30 random questions, otherwise use all
             const finalQuestions = quizMode === 'partial'
-                ? shuffleArray(questions).slice(0, MINIMUM_QUESTIONS)
-                : shuffleArray(questions)
+                ? shuffleArray(parsed).slice(0, MINIMUM_QUESTIONS)
+                : shuffleArray(parsed)
 
-            console.log(`Successfully parsed and selected ${finalQuestions.length} questions from ${questions.length} total`)
             setQuestions(finalQuestions)
             setIsLoading(false)
-        } catch (error) {
-            console.error('Error loading questions:', error)
-            setError(error instanceof Error ? error.message : 'Failed to load questions')
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to load')
             setQuestions([])
             setIsLoading(false)
         }
     }
 
-    // Enhanced shuffle function with Fisher-Yates algorithm
-    const shuffleArray = <T, >(array: T[]): T[] => {
-        const newArray = [...array]
-        for (let i = newArray.length - 1; i > 0; i--) {
+    const shuffleArray = <T,>(array: T[]): T[] => {
+        const arr = [...array]
+        for (let i = arr.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
-            [newArray[i], newArray[j]] = [newArray[j], newArray[i]]
+            [arr[i], arr[j]] = [arr[j], arr[i]]
         }
-        return newArray
+        return arr
     }
 
     const handleAnswerClick = (variant: string) => {
-        const currentQ = questions[currentQuestion];
+        const currentQ = questions[currentQuestion]
 
         if (currentQ.isMultiSelect) {
-            // Handle multi-select
-            const newAnswers = [...selectedAnswers];
+            const newAnswers = [...selectedAnswers]
             if (newAnswers.includes(variant)) {
-                newAnswers.splice(newAnswers.indexOf(variant), 1);
+                newAnswers.splice(newAnswers.indexOf(variant), 1)
             } else {
-                newAnswers.push(variant);
+                newAnswers.push(variant)
             }
-            setSelectedAnswers(newAnswers);
+            setSelectedAnswers(newAnswers)
         } else {
-            // Handle single-select
-            setSelectedAnswers([variant]);
-            const isCorrect = currentQ.correctAnswers ? currentQ.correctAnswers[0] === variant : currentQ.correctAnswers[0] === variant;
+            setSelectedAnswers([variant])
+            const isCorrect = currentQ.correctAnswers[0] === variant
             if (isCorrect) {
-                setScore(score + 1);
+                setScore(s => s + 1)
+                setShowConfetti(true)
+                setTimeout(() => setShowConfetti(false), 2000)
             }
-            setTotalAnswered(prev => prev + 1);
-            setShowNextButton(true);
+            setTotalAnswered(t => t + 1)
+            setShowNextButton(true)
         }
     }
 
-    const handleNextQuestion = () => {
+    const handleCheckMulti = () => {
+        const currentQ = questions[currentQuestion]
+        const isCorrect =
+            currentQ.correctAnswers.length === selectedAnswers.length &&
+            currentQ.correctAnswers.every(a => selectedAnswers.includes(a))
+
+        if (isCorrect) {
+            setScore(s => s + 1)
+            setShowConfetti(true)
+            setTimeout(() => setShowConfetti(false), 2000)
+        }
+        setShowNextButton(true)
+        setTotalAnswered(t => t + 1)
+    }
+
+    const handleNext = () => {
         if (currentQuestion + 1 < questions.length) {
-            setCurrentQuestion(currentQuestion + 1)
+            setCurrentQuestion(c => c + 1)
             setSelectedAnswers([])
             setShowNextButton(false)
         } else {
@@ -199,85 +246,114 @@ function App() {
         setScore(0)
         setShowResult(false)
         setShowNextButton(false)
+        setTotalAnswered(0)
+        setCanFinishEarly(false)
     }
 
-    const handleEndQuiz = () => {
-        setShowResult(true)
-    }
+    // Theme Toggle Button
+    const ThemeToggle = () => (
+        <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle theme">
+            {theme === 'light' ? <MoonIcon/> : <SunIcon/>}
+        </button>
+    )
 
+    // Quiz Selection Screen
     if (!quizMode) {
         return (
-            <div className="min-h-screen bg-white py-6 flex flex-col justify-center items-center">
-                <div className="text-center mb-8">
-                    <h1 className="text-4xl font-bold text-gray-800 mb-4">Quiz</h1>
-                    <p className="text-gray-600">Выбери режим</p>
+            <div className="min-h-screen flex flex-col items-center justify-center px-4">
+                <ThemeToggle/>
+
+                <div className="text-center mb-10 animate-in">
+                    <h1 className="text-4xl sm:text-5xl font-bold mb-2" style={{color: 'var(--text-primary)'}}>
+                        Quiz
+                    </h1>
+                    <p style={{color: 'var(--text-muted)'}}>Test your knowledge</p>
                 </div>
 
-                <div className="w-full max-w-md px-4 mb-8">
-                    <div className="bg-white rounded-lg border border-gray-200 p-6">
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Select Quiz
-                        </label>
-                        <select
-                            value={selectedQuizId}
-                            onChange={(e) => setSelectedQuizId(e.target.value)}
-                            className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2
-                focus:ring-blue-500 focus:border-blue-500"
-                        >
-                            {AVAILABLE_QUIZZES.map(quiz => (
-                                <option key={quiz.id} value={quiz.id}>
-                                    {quiz.name}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
+                <div className="w-full max-w-sm mb-8 animate-in delay-1" style={{opacity: 0}}>
+                    <label className="block text-sm font-medium mb-2" style={{color: 'var(--text-secondary)'}}>
+                        Choose topic
+                    </label>
+                    <select
+                        value={selectedQuizId}
+                        onChange={(e) => setSelectedQuizId(e.target.value)}
+                        className="select"
+                    >
+                        {AVAILABLE_QUIZZES.map(q => (
+                            <option key={q.id} value={q.id}>{q.name}</option>
+                        ))}
+                    </select>
                 </div>
 
-                <div className="space-y-4 w-full max-w-md px-4">
+                <div className="w-full max-w-sm space-y-4">
                     <button
                         onClick={() => setQuizMode('partial')}
-                        className="w-full bg-blue-500 text-white p-6 rounded-xl hover:bg-blue-600
-              transition-colors duration-300 flex flex-col items-center gap-2"
+                        className="mode-card w-full flex items-center gap-4 animate-in delay-2"
+                        style={{opacity: 0}}
                     >
-                        <span className="text-2xl font-bold">Jai mode</span>
-                        <span className="text-sm opacity-90">
-              {MINIMUM_QUESTIONS} рандомных
-            </span>
+                        <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+                             style={{background: 'var(--accent)', color: 'white'}}>
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                      d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                            </svg>
+                        </div>
+                        <div className="text-left">
+                            <div className="font-semibold text-lg" style={{color: 'var(--text-primary)'}}>Quick Mode</div>
+                            <div className="text-sm" style={{color: 'var(--text-muted)'}}>{MINIMUM_QUESTIONS} questions</div>
+                        </div>
                     </button>
 
                     <button
                         onClick={() => setQuizMode('all')}
-                        className="w-full bg-green-500 text-white p-6 rounded-xl hover:bg-green-600
-              transition-colors duration-300 flex flex-col items-center gap-2"
+                        className="mode-card w-full flex items-center gap-4 animate-in delay-3"
+                        style={{opacity: 0}}
                     >
-                        <span className="text-2xl font-bold">Жоский mode</span>
-                        <span className="text-sm opacity-90">
-              Все вопросы
-            </span>
+                        <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+                             style={{background: 'var(--success)', color: 'white'}}>
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                        </div>
+                        <div className="text-left">
+                            <div className="font-semibold text-lg" style={{color: 'var(--text-primary)'}}>Full Mode</div>
+                            <div className="text-sm" style={{color: 'var(--text-muted)'}}>All questions</div>
+                        </div>
                     </button>
                 </div>
             </div>
         )
     }
 
+    // Loading
     if (isLoading) {
         return (
-            <div className="flex justify-center items-center h-screen">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-500"></div>
+            <div className="min-h-screen flex flex-col items-center justify-center">
+                <ThemeToggle/>
+                <div className="loader mb-4"/>
+                <p style={{color: 'var(--text-muted)'}}>Loading...</p>
             </div>
         )
     }
 
+    // Error
     if (error) {
         return (
-            <div className="flex justify-center items-center h-screen">
-                <div className="text-red-500 text-center">
-                    <p className="text-xl font-bold mb-4">Error loading questions</p>
-                    <p>{error}</p>
-                    <button
-                        onClick={() => loadQuestions()}
-                        className="mt-4 bg-cyan-500 text-white py-2 px-4 rounded-md hover:bg-cyan-600 transition-colors"
-                    >
+            <div className="min-h-screen flex items-center justify-center px-4">
+                <ThemeToggle/>
+                <div className="card p-8 text-center max-w-sm w-full">
+                    <div className="w-14 h-14 rounded-full mx-auto mb-4 flex items-center justify-center"
+                         style={{background: 'var(--error-light)'}}>
+                        <svg className="w-7 h-7" style={{color: 'var(--error)'}} fill="none" stroke="currentColor"
+                             viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        </svg>
+                    </div>
+                    <h2 className="text-xl font-semibold mb-2" style={{color: 'var(--text-primary)'}}>Error</h2>
+                    <p className="mb-6" style={{color: 'var(--text-muted)'}}>{error}</p>
+                    <button onClick={loadQuestions} className="btn btn-primary w-full">
                         Try Again
                     </button>
                 </div>
@@ -286,225 +362,187 @@ function App() {
     }
 
     if (questions.length === 0) {
-        return <div className="flex justify-center items-center h-screen">Loading questions...</div>
+        return (
+            <div className="min-h-screen flex items-center justify-center">
+                <ThemeToggle/>
+                <p style={{color: 'var(--text-muted)'}}>Loading...</p>
+            </div>
+        )
     }
 
+    const currentQ = questions[currentQuestion]
+    const progress = ((currentQuestion + 1) / questions.length) * 100
+
+    // Quiz Screen
     return (
-        <div className="min-h-screen bg-white py-2 sm:py-6 flex flex-col justify-center">
-            <div className="relative py-2 sm:py-3 w-full px-2 sm:px-4 mx-auto max-w-[95%] sm:max-w-3xl">
+        <div className="min-h-screen py-4 px-4">
+            <ThemeToggle/>
+            {showConfetti && <Confetti/>}
+
+            <div className="max-w-2xl mx-auto">
                 {!showResult ? (
-                    <div className="w-full mx-auto">
-                        <div className="space-y-4 sm:space-y-6">
-                            <div
-                                className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-4 sm:mb-8">
-                                <div>
-                                    <h2 className="text-2xl sm:text-4xl font-bold text-gray-800 text-center sm:text-left">
-                                        Question {currentQuestion + 1} of {questions.length}
-                                    </h2>
-                                    <p className="text-sm text-gray-500 mt-1">
-                                        Questions answered: {totalAnswered}
-                                        {quizMode === 'partial' && totalAnswered >= MINIMUM_QUESTIONS &&
-                                            ` (You can finish now or continue for a better score)`
-                                        }
-                                    </p>
-                                    <p className="text-sm text-gray-500">
-                                        Mode: {quizMode === 'partial' ? 'Jai mode' : 'Жоский mode'}
-                                    </p>
-                                </div>
-                                <div className="flex gap-2 sm:gap-4">
-                                    {quizMode === 'partial' && canFinishEarly && (
-                                        <button
-                                            onClick={handleEndQuiz}
-                                            className="px-4 py-2 text-sm font-medium text-green-600 hover:text-green-700
-                        border border-green-300 hover:border-green-400 rounded-lg 
-                        transition-colors duration-300 w-full sm:w-auto"
-                                        >
-                                            Finish ({MINIMUM_QUESTIONS} answered)
-                                        </button>
-                                    )}
-                                    <button
-                                        onClick={handleEndQuiz}
-                                        className="px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700
-                      border border-red-300 hover:border-red-400 rounded-lg 
-                      transition-colors duration-300 w-full sm:w-auto"
-                                    >
-                                        Give Up
-                                    </button>
-                                </div>
+                    <div className="animate-in">
+                        {/* Progress */}
+                        <div className="mb-6">
+                            <div className="flex justify-between items-center mb-2">
+                                <span className="text-sm font-medium" style={{color: 'var(--text-secondary)'}}>
+                                    {currentQuestion + 1} / {questions.length}
+                                </span>
+                                <span className="text-sm" style={{color: 'var(--text-muted)'}}>
+                                    Score: {score}
+                                </span>
+                            </div>
+                            <div className="progress-track">
+                                <div className="progress-fill" style={{width: `${progress}%`}}/>
+                            </div>
+                        </div>
+
+                        {/* Question Card */}
+                        <div className="card p-6 sm:p-8 mb-6">
+                            <div className="flex justify-between items-start gap-4 mb-6">
+                                <h2 className="text-lg sm:text-xl font-medium leading-relaxed"
+                                    style={{color: 'var(--text-primary)'}}>
+                                    {currentQ.question}
+                                </h2>
+                                <button
+                                    onClick={() => setShowResult(true)}
+                                    className="text-sm px-3 py-1.5 rounded-lg flex-shrink-0"
+                                    style={{
+                                        color: 'var(--error)',
+                                        background: 'var(--error-light)',
+                                    }}
+                                >
+                                    End
+                                </button>
                             </div>
 
-                            <p className="text-xl sm:text-2xl text-gray-700 font-medium mb-4 sm:mb-8 text-left">
-                                {questions[currentQuestion].question}
-                                {questions[currentQuestion].isMultiSelect && (
-                                    <span className="block text-sm text-blue-600 mt-2">
-                    (Multiple answers required)
-                  </span>
-                                )}
-                            </p>
+                            {currentQ.isMultiSelect && (
+                                <div className="inline-block px-3 py-1 rounded-full text-sm mb-4"
+                                     style={{background: 'var(--accent-light)', color: 'var(--accent)'}}>
+                                    Select multiple
+                                </div>
+                            )}
 
-                            <div className="space-y-3 sm:space-y-4 flex flex-col">
-                                {questions[currentQuestion].variants.map((variant, index) => {
+                            {/* Options */}
+                            <div className="space-y-3">
+                                {currentQ.variants.map((variant, i) => {
                                     const isSelected = selectedAnswers.includes(variant)
-                                    const isCorrect = questions[currentQuestion].correctAnswers?.includes(variant)
-                                    const showCorrectness = selectedAnswers.length > 0 && showNextButton
+                                    const isCorrect = currentQ.correctAnswers.includes(variant)
+                                    const showResult = showNextButton
+
+                                    let className = 'option'
+                                    if (showResult) {
+                                        if (isCorrect) className += ' correct'
+                                        else if (isSelected) className += ' incorrect animate-shake'
+                                    } else if (isSelected) {
+                                        className += ' selected'
+                                    }
 
                                     return (
                                         <button
-                                            key={index}
+                                            key={i}
                                             onClick={() => !showNextButton && handleAnswerClick(variant)}
                                             disabled={showNextButton}
-                                            className={`w-full p-3 sm:p-4 text-left transition-all duration-300 flex items-center
-                        ${!showCorrectness
-                                                ? 'hover:bg-gray-50 active:bg-gray-100 rounded-lg border border-gray-200'
-                                                : isCorrect
-                                                    ? 'bg-green-50 border border-green-200 rounded-lg'
-                                                    : isSelected
-                                                        ? 'bg-red-50 border border-red-200 rounded-lg'
-                                                        : 'rounded-lg border border-gray-200 opacity-60'
-                                            }
-                      `}
+                                            className={className}
+                                            style={{
+                                                animationDelay: `${i * 0.05}s`,
+                                            }}
                                         >
-                                            <div className="flex items-center w-full">
+                                            <div className="flex items-center gap-3">
                                                 <div
-                                                    className={`w-5 h-5 sm:w-6 sm:h-6 ${questions[currentQuestion].isMultiSelect ? 'rounded-md' : 'rounded-full'} border-2 flex-shrink-0 mr-3 sm:mr-4
-                          ${!showCorrectness
-                                                        ? isSelected ? 'border-blue-500' : 'border-gray-300'
-                                                        : isCorrect
-                                                            ? 'border-green-500'
-                                                            : isSelected
-                                                                ? 'border-red-500'
-                                                                : 'border-gray-300'
-                                                    }
-                        `}>
-                                                    {(isSelected || (showCorrectness && isCorrect)) && (
-                                                        questions[currentQuestion].isMultiSelect ? (
-                                                            <svg className={`w-3 h-3 sm:w-4 sm:h-4 m-auto
-                                ${!showCorrectness
-                                                                ? 'text-blue-500'
-                                                                : isCorrect
-                                                                    ? 'text-green-500'
-                                                                    : 'text-red-500'
-                                                            }
-                              `}
-                                                                 fill="currentColor"
-                                                                 viewBox="0 0 20 20"
-                                                            >
-                                                                <path
-                                                                    d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/>
-                                                            </svg>
-                                                        ) : (
-                                                            <div className={`w-2.5 h-2.5 sm:w-3 sm:h-3 m-auto rounded-full
-                                ${!showCorrectness
-                                                                ? 'bg-blue-500'
-                                                                : isCorrect
-                                                                    ? 'bg-green-500'
-                                                                    : 'bg-red-500'
-                                                            }
-                              `}/>
-                                                        )
+                                                    className={`w-5 h-5 flex-shrink-0 flex items-center justify-center border-2 transition-all ${
+                                                        currentQ.isMultiSelect ? 'rounded' : 'rounded-full'
+                                                    }`}
+                                                    style={{
+                                                        borderColor: showResult
+                                                            ? isCorrect ? 'var(--success)' : isSelected ? 'var(--error)' : 'var(--border-color)'
+                                                            : isSelected ? 'var(--accent)' : 'var(--border-color)',
+                                                        background: (isSelected || (showResult && isCorrect))
+                                                            ? showResult
+                                                                ? isCorrect ? 'var(--success)' : 'var(--error)'
+                                                                : 'var(--accent)'
+                                                            : 'transparent',
+                                                    }}
+                                                >
+                                                    {(isSelected || (showResult && isCorrect)) && (
+                                                        <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                                            <path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/>
+                                                        </svg>
                                                     )}
                                                 </div>
-                                                <span className={`text-base sm:text-lg flex-grow
-                          ${showCorrectness && isCorrect ? 'text-green-700 font-medium' : ''}
-                          ${showCorrectness && isSelected && !isCorrect ? 'text-red-700 font-medium' : ''}
-                        `}>
-                          {variant}
-                        </span>
-                                                {showCorrectness && (
-                                                    isCorrect ? (
-                                                        <svg
-                                                            className="w-5 h-5 sm:w-6 sm:h-6 text-green-500 flex-shrink-0"
-                                                            fill="none"
-                                                            stroke="currentColor"
-                                                            viewBox="0 0 24 24"
-                                                        >
-                                                            <path
-                                                                strokeLinecap="round"
-                                                                strokeLinejoin="round"
-                                                                strokeWidth={2}
-                                                                d="M5 13l4 4L19 7"
-                                                            />
-                                                        </svg>
-                                                    ) : isSelected && (
-                                                        <svg
-                                                            className="w-5 h-5 sm:w-6 sm:h-6 text-red-500 flex-shrink-0"
-                                                            fill="none"
-                                                            stroke="currentColor"
-                                                            viewBox="0 0 24 24"
-                                                        >
-                                                            <path
-                                                                strokeLinecap="round"
-                                                                strokeLinejoin="round"
-                                                                strokeWidth={2}
-                                                                d="M6 18L18 6M6 6l12 12"
-                                                            />
-                                                        </svg>
-                                                    )
-                                                )}
+                                                <span style={{
+                                                    color: showResult && isCorrect ? 'var(--success)'
+                                                        : showResult && isSelected && !isCorrect ? 'var(--error)'
+                                                            : 'var(--text-primary)'
+                                                }}>
+                                                    {variant}
+                                                </span>
                                             </div>
                                         </button>
                                     )
                                 })}
                             </div>
-
-                            {(selectedAnswers.length > 0 && !showNextButton && questions[currentQuestion].isMultiSelect) && (
-                                <button
-                                    onClick={() => {
-                                        const currentQ = questions[currentQuestion];
-                                        const isCorrect =
-                                            currentQ.correctAnswers?.length === selectedAnswers.length &&
-                                            currentQ.correctAnswers?.every(answer => selectedAnswers.includes(answer)) || false;
-
-                                        if (isCorrect) {
-                                            setScore(score + 1);
-                                        }
-                                        setShowNextButton(true);
-                                        setTotalAnswered(prev => prev + 1);
-                                    }}
-                                    className="mt-6 sm:mt-8 w-full bg-blue-500 text-white py-2.5 sm:py-3 px-4 sm:px-6 rounded-lg
-                    text-base sm:text-lg font-semibold hover:bg-blue-600 transition-colors duration-300"
-                                >
-                                    Check Answers
-                                </button>
-                            )}
-
-                            {showNextButton && (
-                                <button
-                                    onClick={handleNextQuestion}
-                                    className="mt-6 sm:mt-8 w-full bg-blue-500 text-white py-2.5 sm:py-3 px-4 sm:px-6 rounded-lg
-                    text-base sm:text-lg font-semibold hover:bg-blue-600 transition-colors duration-300"
-                                >
-                                    {currentQuestion === questions.length - 1 ? 'Finish Quiz' : 'Next Question'}
-                                </button>
-                            )}
                         </div>
+
+                        {/* Actions */}
+                        {currentQ.isMultiSelect && selectedAnswers.length > 0 && !showNextButton && (
+                            <button onClick={handleCheckMulti} className="btn btn-primary w-full animate-pop">
+                                Check Answer
+                            </button>
+                        )}
+
+                        {showNextButton && (
+                            <button onClick={handleNext} className="btn btn-primary w-full animate-pop">
+                                {currentQuestion === questions.length - 1 ? 'See Results' : 'Next'}
+                            </button>
+                        )}
                     </div>
                 ) : (
-                    <div className="text-center px-4">
-                        <h2 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-4 sm:mb-6">Quiz Complete!</h2>
-                        <div className="mb-6 sm:mb-8">
-                            <div className="text-5xl sm:text-6xl font-bold text-blue-500 mb-2">
-                                {Math.round((score / totalAnswered) * 100)}%
+                    // Results
+                    <div className="text-center animate-in">
+                        <div className="card p-8 sm:p-10">
+                            <h2 className="text-2xl font-bold mb-2" style={{color: 'var(--text-primary)'}}>
+                                Complete!
+                            </h2>
+                            <p className="mb-8" style={{color: 'var(--text-muted)'}}>Here's how you did</p>
+
+                            {/* Score Ring */}
+                            <div className="relative w-40 h-40 mx-auto mb-8">
+                                <svg className="w-full h-full score-ring" viewBox="0 0 120 120">
+                                    <circle className="score-ring-bg" cx="60" cy="60" r="52" strokeWidth="10"/>
+                                    <circle
+                                        className="score-ring-fill"
+                                        cx="60" cy="60" r="52" strokeWidth="10"
+                                        strokeDasharray={`${(score / totalAnswered) * 327} 327`}
+                                    />
+                                </svg>
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                    <span className="text-4xl font-bold animate-pop" style={{color: 'var(--accent)'}}>
+                                        {Math.round((score / totalAnswered) * 100)}%
+                                    </span>
+                                </div>
                             </div>
-                            <p className="text-lg sm:text-xl text-gray-600">
-                                You got {score} out of {totalAnswered} questions right
+
+                            <p className="text-lg mb-2" style={{color: 'var(--text-primary)'}}>
+                                <span className="font-bold" style={{color: 'var(--accent)'}}>{score}</span> out of {totalAnswered} correct
                             </p>
-                            {quizMode === 'partial' && totalAnswered > MINIMUM_QUESTIONS && (
-                                <p className="text-sm text-gray-500 mt-2">
-                                    You answered {totalAnswered - MINIMUM_QUESTIONS} extra questions!
-                                </p>
-                            )}
-                        </div>
-                        <div className="space-y-4">
+
+                            <div className="p-4 rounded-xl mb-8" style={{
+                                background: score / totalAnswered >= 0.7 ? 'var(--success-light)' : 'var(--accent-light)',
+                                color: score / totalAnswered >= 0.7 ? 'var(--success)' : 'var(--accent)'
+                            }}>
+                                {score / totalAnswered >= 0.8 ? 'Excellent!' :
+                                    score / totalAnswered >= 0.6 ? 'Good job!' : 'Keep practicing!'}
+                            </div>
+
                             <button
                                 onClick={() => {
                                     setQuizMode(null)
                                     resetQuiz()
                                 }}
-                                className="w-full sm:w-auto bg-blue-500 text-white py-2.5 sm:py-3 px-6 sm:px-8 rounded-lg
-                  text-base sm:text-lg font-semibold hover:bg-blue-600 transition-colors duration-300"
+                                className="btn btn-primary"
                             >
-                                Choose New Mode
+                                Play Again
                             </button>
                         </div>
                     </div>
