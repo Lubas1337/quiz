@@ -16,14 +16,13 @@ const MINIMUM_QUESTIONS = 30;
 
 // Add available quiz files
 const AVAILABLE_QUIZZES = [
-        {id: 'os rk2', name: 'os rk2', file: '/osrk2.docx'},
+    {id: 'fullstack', name: 'Fullstack', file: '/fullstack.docx'},
+    {id: 'os rk2', name: 'os rk2', file: '/osrk2.docx'},
     {id: 'os rk1', name: 'os rk1', file: '/os_rk1.docx'},
     {id: 'philosophy', name: 'Philosophy', file: '/pshyc.docx'},
     {id: 'Webka', name: 'Webka', file: '/webka2.docx'},
     {id: 'ix', name: 'uiux', file: '/ix.docx'},
     {id: 'culturology', name: 'Culturology', file: '/culturology.docx'},
-    // Add more quizzes here as needed
-    // { id: 'history', name: 'History', file: '/history.docx' },
 ]
 
 function App() {
