@@ -80,7 +80,7 @@ function App() {
     const [isLoading, setIsLoading] = useState(true)
     const [showNextButton, setShowNextButton] = useState(false)
     const [totalAnswered, setTotalAnswered] = useState(0)
-    const [canFinishEarly, setCanFinishEarly] = useState(false)
+    const [, setCanFinishEarly] = useState(false)
     const [quizMode, setQuizMode] = useState<QuizMode>(null)
     const [selectedQuizId, setSelectedQuizId] = useState<string>(AVAILABLE_QUIZZES[0].id)
     const [showConfetti, setShowConfetti] = useState(false)
